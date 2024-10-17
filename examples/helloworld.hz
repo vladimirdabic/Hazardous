@@ -1,0 +1,7 @@
+%include "std.hz"
+
+proc main(argc: i32, argv: u8**) -> i32 {
+    printf("Hello World\n");
+    return 0;
+}
+

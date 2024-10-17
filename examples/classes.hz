@@ -1,0 +1,28 @@
+%include "std.hz"
+
+class Person {
+    var name: u8*;
+
+    Person(name: u8*) {
+        this.name = name;
+    }
+
+    proc say(msg: u8*) {
+        printf("%s says: %s\n", this.name, msg);
+    }
+}
+
+proc main(argc: i32, argv: u8**) -> i32 {
+    // stack allocated
+    var vd: Person("vladimirdabic");
+    vd.say("Hello");
+
+    // class and struct types are assumed to be pointers
+    // instead of using Person* like in C, you just use Person
+    var p: Person = new Person("vladimirdabic");
+    p.say("Hello again!");
+    free((ptr)p);
+
+    return 0;
+}
+
