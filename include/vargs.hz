@@ -1,0 +1,66 @@
+%define va_start(pparams) [var __valist: VaArgs(pparams, %rbp, %rcx, %rdx, %r8, %r9)]
+%define va_next(type) [((type)__valist.next())]
+%define va_push(v, num) [
+    v = num;
+    while(v > 0) {
+        push __valist.at(v);
+        v = v - 1;
+    }
+    v = 0
+]
+
+%define va_push_min(v, num, min_req) [
+    // push minimum required parameters if any
+    if(num < min_req) {
+        v = min_req - num;
+        while(v > 0) {
+            push 0;
+            v = v - 1;
+        }
+    }
+
+    // push parameters
+    v = num;
+    while(v > 0) {
+        push __valist.at(v);
+        v = v - 1;
+    }
+    
+    v = 0
+]
+
+class VaArgs {
+    var start: u32;
+    var current: u32;
+    var rbp: u64;
+    var arg_registers: u64[4];
+
+    VaArgs(current: u32, rbp: u64, rcx: u64, rdx: u64, r8: u64, r9: u64) {
+        this.current = current - 1;
+        this.start = current - 1;
+        this.rbp = rbp;
+        this.arg_registers[0] = rcx;
+        this.arg_registers[1] = rdx;
+        this.arg_registers[2] = r8;
+        this.arg_registers[3] = r9;
+    }
+
+    proc next -> u64 {
+        if(this.current < 4) {
+            this.current = this.current + 1;
+            return this.arg_registers[this.current-1];
+        }
+
+        this.current = this.current + 1;
+        var arg: u64 = *(u64*)this.rbp + (this.current + 1) * 8;
+        return arg;
+    }
+
+    proc at(i: u32) -> u64 {
+        if(this.start + i < 4) {
+            return this.arg_registers[this.start + i];
+        }
+
+        return *(u64*)this.rbp + (this.start + i + 2) * 8;
+    }
+}

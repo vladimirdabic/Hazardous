@@ -1,0 +1,54 @@
+
+
+enum TokenType {
+    NUMBER, STRING, IDENTIFIER, CHAR,
+
+    OPEN_PAREN, CLOSE_PAREN,
+    OPEN_BRACE, CLOSE_BRACE,
+    OPEN_SQUARE, CLOSE_SQUARE,
+
+    SEMICOLON, COLON, QUESTION_MARK, DOT, COMMA,
+
+    PLUS, MINUS, STAR, BANG, SLASH, PIPE, EQUALS, PRECENT, ARROW_UP, AMPERSAND, POINTER_ARROW,
+    VARARGS,
+
+    AND, OR, DEQUALS, NEQUALS, GREATER, GEQUALS, LOWER, LEQUALS,
+
+    IF, ELSE, WHILE, BREAK, EXTERNAL, RETURN, LOCAL, TRUE, FALSE, NEW, VAR, STDCALL,
+    RES, SIZEOF, SWITCH, CASE, DEFAULT, ASM, PROC,
+
+    U8, U16, U32, U64, I8, I16, I32, I64, PTR, STRUCT, ENUM, CLASS,
+    
+    DEFINE, INCLUDE,
+
+    REGISTER,
+
+    EOF
+}
+
+struct TokenLocation {
+    file: u8*;
+    row: u32;
+    col: u32;
+}
+
+
+class Token {
+    var type: TokenType;
+    var value: ptr;
+    var number: u64;
+    var location: struct {
+        file: u8*;
+        row: u32;
+        col: u32;
+    };
+
+    Token(type: TokenType, value: ptr, number: u64, location: TokenLocation) {
+        this.type = type;
+        this.value = value;
+        this.number = number;
+        this.location.file = location.file;
+        this.location.row = location.row;
+        this.location.col = location.col;
+    }
+}

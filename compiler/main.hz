@@ -1,0 +1,21 @@
+%include "std.hz"
+%include "scanner.hz"
+%include "preprocessor.hz"
+%include "parser.hz"
+%include "asmemit.hz"
+
+
+local var include_dirs: u8**;
+
+proc main(argc: i32, argv: u8**) -> i32 {
+    include_dirs = res u8* [".\\", ".\\include\\", 0];
+
+    var scanner: HzScanner;
+    var preprocessor: HzPreprocessor;
+    var parser: HzParser();
+
+    var tokens = preprocessor.preprocess(scanner.scan("%include \"test.hz\"", "<main>"), include_dirs, true);
+    var declarations = parser.parse(tokens);
+
+    return 0;
+}

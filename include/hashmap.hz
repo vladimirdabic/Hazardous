@@ -1,0 +1,243 @@
+%include "cstdlib.hz"
+%include "cstring.hz"
+
+
+struct HashMapEntry {
+    key: u8*;
+    value: u64;   
+}
+
+// forward declaration
+class HashMapIterator;
+class HashMap;
+local proc hash_key(key: u8*) -> u64;
+
+%define HASHMAP_INITIAL_CAPACITY [16]
+
+class HashMap {
+    var entries: HashMapEntry*;
+    var capacity: u64;
+    var length: u64;
+
+    HashMap() {
+        this.length = 0;
+        this.capacity = HASHMAP_INITIAL_CAPACITY;
+        this.entries = calloc(this.capacity, sizeof(ptr));
+
+        var i = 0;
+        while(i < this.capacity) {
+            this.entries[i] = (HashMapEntry)malloc(sizeof(HashMapEntry));
+            this.entries[i].key = NULL;
+            i = i + 1;
+        }
+
+        if(this.entries == NULL) {
+            free((ptr)this);
+            return;
+        }
+    }
+
+    proc set(key: u8*, value: u64) -> u8* {
+        if (value == 0) {
+            return NULL;
+        }
+
+        // If length will exceed half of current capacity, expand it.
+        if (this.length >= this.capacity / 2) {
+            if (!this.expand()) {
+                return NULL;
+            }
+        }
+
+        // Set entry and update length.
+        return this.set_entry(key, value, true);
+    }
+
+    proc set_entry(key: u8*, value: u64, do_alloc: u8) -> u8* {
+        // AND hash with capacity-1 to ensure it's within entries array.
+        var hash = hash_key(key);
+        var index: u64 = hash & (this.capacity - 1);
+
+        // Loop till we find an empty entry.
+        while (this.entries[index].key != NULL) {
+            if (strcmp(key, this.entries[index].key) == 0) {
+                // Found key (it already exists), update value.
+                this.entries[index].value = value;
+                return this.entries[index].key;
+            }
+            // Key wasn't in this slot, move to next (linear probing).
+            index = index + 1;
+            if (index >= this.capacity) {
+                // At end of entries array, wrap around.
+                index = 0;
+            }
+        }
+
+        // Didn't find key, allocate+copy if needed, then insert it.
+        if (do_alloc == true) {
+            key = strdup(key);
+            if (key == NULL) {
+                return NULL;
+            }
+            this.length = this.length + 1;
+        }
+        this.entries[index].key = key;
+        this.entries[index].value = value;
+        return key;
+    }
+
+    proc expand -> u8 {
+        var new_capacity = this.capacity * 2;
+        if (new_capacity < this.capacity) {
+            return false;
+        }
+
+        var new_entries: HashMapEntry* = calloc(new_capacity, sizeof(HashMapEntry*));
+        if (new_entries == NULL) {
+            return false;
+        }
+
+        var new_map: HashMap;
+        new_map.entries = new_entries;
+        new_map.capacity = new_capacity;
+
+        var i = 0;
+        while(i < new_map.capacity) {
+            new_map.entries[i] = (HashMapEntry)malloc(sizeof(HashMapEntry));
+            new_map.entries[i].key = NULL;
+            i = i + 1;
+        }
+
+
+        // Iterate entries, move all non-empty ones to new table's entries.
+        i = 0;
+        while(i < this.capacity) {
+            var entry = this.entries[i];
+            if (entry.key != NULL) {
+                new_map.set_entry(entry.key, entry.value, false);
+            }
+            i = i + 1;
+        }
+
+        // Free old entries array and update this table's details.
+        free(this.entries);
+        this.entries = new_map.entries;
+        this.capacity = new_map.capacity;
+        // free((ptr)new_map);
+        return true;
+    }
+
+    proc get(key: u8*) -> u64 {
+        var hash = hash_key(key);
+        var index: u64 = hash & (this.capacity - 1);
+
+        while(this.entries[index].key != NULL) {
+            if(strcmp(key, this.entries[index].key) == 0) {
+                return this.entries[index].value;
+            }
+
+            index = index + 1;
+            if(index >= this.capacity) {
+                index = 0;
+            }
+        }
+
+        return 0;
+    }
+
+    proc destroy {
+        var i = 0;
+        while(i < this.capacity) {
+            if(this.entries[i].key != NULL) {
+                free((ptr)this.entries[i].key);
+                free((ptr)this.entries[i]);
+            }
+            i = i + 1;
+        }
+
+        free(this.entries);
+        free((ptr)this);
+    }
+
+    proc destroy_local {
+        var i = 0;
+        while(i < this.capacity) {
+            if(this.entries[i].key != NULL) {
+                free((ptr)this.entries[i].key);
+                free((ptr)this.entries[i]);
+            }
+            i = i + 1;
+        }
+
+        free(this.entries);
+    }
+
+    proc length -> u64 {
+        return this.length;
+    }
+
+    proc iterator -> HashMapIterator {
+        return new HashMapIterator(this);
+    }
+
+    proc clear {
+        var i = 0;
+
+        while(i < this.length) {
+            this.entries[i].key = NULL;
+            i = i + 1;
+        }
+
+        this.length = 0;
+    }
+}
+
+
+class HashMapIterator {
+    var key: u8*;
+    var value: u64;
+
+    var _map: HashMap;
+    var _index: u64;
+
+    HashMapIterator(map: HashMap) {
+        this._map = map;
+        this._index = 0;
+    }
+
+    proc next -> u8 {
+        // Loop till we've hit end of entries array.
+        while (this._index < this._map.capacity) {
+            var i = this._index;
+            this._index = this._index + 1;
+            if (this._map.entries[i].key != NULL) {
+                // Found next non-empty item, update iterator key and value.
+                var entry = this._map.entries[i];
+                this.key = entry.key;
+                this.value = entry.value;
+                return true;
+            }
+        }
+
+        free((ptr)this);
+        return false;
+    }
+}
+
+%define FNV_OFFSET [14695981039346656037]
+%define FNV_PRIME  [1099511628211]
+
+// Return 64-bit FNV-1a hash for key (NUL-terminated). See description:
+// https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function
+local proc hash_key(key: u8*) -> u64 {
+    var hash: u64 = FNV_OFFSET;
+    
+    var p = key;
+    while(*p) {
+        hash = hash ^ (u64)(u8)(*p);
+        hash = hash * FNV_PRIME;
+        p = (u8*)p + 1;
+    }
+
+    return hash;
+}

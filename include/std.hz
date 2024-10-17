@@ -1,0 +1,24 @@
+%include "cstdio.hz"
+
+
+proc read_text_file(file_name: u8*) -> u8* {
+    var file_ptr: ptr;
+    var buffer: u8*;
+    var file_len: u32;
+
+    file_ptr = fopen(file_name, "rb");
+
+    if(file_ptr == 0)
+        return (ptr)0;
+
+    fseek(file_ptr, 0, SEEK_END);
+    file_len = ftell(file_ptr);
+    rewind(file_ptr);
+
+    buffer = malloc((file_len + 1) * sizeof(u8));
+    fread(buffer, file_len, 1, file_ptr);
+    fclose(file_ptr);
+
+    buffer[file_len] = 0;
+    return buffer;
+}

@@ -1,0 +1,334 @@
+%include "std.hz"
+%include "dynarray.hz"
+%include "hashmap.hz"
+%include "token.hz"
+%include "cstdlib.hz"
+%include "cstdio.hz"
+%include "string.hz"
+
+struct MacroData {
+    tokens: DynArray;
+    args: DynArray;
+}
+
+class HzPreprocessor;
+
+class HzPreprocessor {
+    var macros: HashMap;
+    var included: HashMap;
+    var tokens: DynArray;
+    var pos: u32;
+
+    HzPreprocessor() {}
+
+    proc preprocess(tokens: DynArray, include_dirs: u8**, setup: u8) -> DynArray {
+        this.tokens = tokens;
+        this.pos = 0;
+
+        if(setup) {
+            this.macros = new HashMap;
+            this.included = new HashMap;
+        }
+
+        var new_tokens = new DynArray;
+
+        while(this.available()) {
+            var token = this.advance();
+
+            switch(token.type) {
+                case TokenType.DEFINE: {
+                    var name = this.consume(TokenType.IDENTIFIER, "Expected macro name");
+                    var macro_args = new DynArray;
+
+                    if(this.match(TokenType.OPEN_PAREN)) {
+                        while(1) {
+                            macro_args.append((u64)this.consume(TokenType.IDENTIFIER, "Expected macro argument").value);
+                            if(!this.match(TokenType.COMMA)) break;
+                        }
+                        this.consume(TokenType.CLOSE_PAREN, "Expected ')' after macro arguments");
+                    }
+
+                    var macro_tokens = new DynArray;
+                    if(this.match(TokenType.OPEN_SQUARE)) {
+                        while(!this.check(TokenType.CLOSE_SQUARE)) {
+                            if(this.available()) {
+                                macro_tokens.append((u64)this.advance());
+                            } else {
+                                this.error((TokenLocation)name.location, "Expected ']' after macro definition");
+                            }
+                        }
+
+                        this.consume(TokenType.CLOSE_SQUARE, "Expected ']' after macro definition");
+                    } else {
+                        if(!this.available()) {
+                            this.error((TokenLocation)name.location, "Expected macro value");
+                        }                        
+                        macro_tokens.append((u64)this.advance());
+                    }
+
+
+                    if(macro_tokens.length() == 0) {
+                        this.error((TokenLocation)name.location, "Expected macro value");
+                    }
+
+                    var preprocessor: HzPreprocessor;
+                    preprocessor.macros = this.macros;
+                    preprocessor.included = this.included;
+
+                    macro_tokens.append((u64)new Token(TokenType.EOF, NULL, 0, (TokenLocation)((Token)macro_tokens.peek()).location));
+
+                    var preprocessed = preprocessor.preprocess(macro_tokens, include_dirs, false);
+                    preprocessed.remove(); // remove EOF token
+
+                    var data: MacroData = (MacroData)malloc(sizeof(MacroData));
+                    data.tokens = preprocessed;
+                    data.args = macro_args;
+                    this.macros.set(name.value, (u64)data);
+
+                    break;
+                }
+
+                case TokenType.INCLUDE: {
+                    var file = this.consume(TokenType.STRING, "Expected file name");
+                    var scanner: HzScanner;
+                    var preprocessor: HzPreprocessor;
+                    preprocessor.macros = this.macros;
+                    preprocessor.included = this.included;
+                    var file_name = hzsubstring(file.value, 0, strlen(file.value));
+                    
+                    var file_content: u8* = NULL;
+                    var combined_file_name: String(NULL);
+
+                    if(!this.included.get(file_name)) {
+                        var p: u8** = include_dirs;
+
+                        while(*p) {
+                            combined_file_name.set_buffer(*p);
+                            combined_file_name.concat_array(file_name);
+                            file_content = read_text_file(combined_file_name.buffer());
+                            if(file_content) break;
+                            p = (u8**)p + sizeof(ptr);
+                        }
+
+                        if(file_content == NULL) {
+                            this.error((TokenLocation)token.location, "File '%s' not found", file_name);
+                        }
+
+                        this.included.set(file_name, true);
+                        var preprocessed = preprocessor.preprocess(scanner.scan(file_content, file_name), include_dirs, false);
+                        preprocessed.remove(); // remove EOF token
+                        new_tokens.extend(preprocessed);
+                    }
+
+                    break;
+                }
+
+                case TokenType.IDENTIFIER: {
+                    new_tokens.extend(this.expand_token(token));
+                    break;
+                }
+
+                default:
+                    new_tokens.append((u64)token);
+            }
+        }
+
+        new_tokens.append(tokens.peek());
+        return new_tokens;
+    }
+
+    proc expand_token(token: Token) -> DynArray {
+        var macro_data = (MacroData)this.macros.get(token.value);
+        if(macro_data) {
+            if(macro_data.args.length() > 0) {
+                var args: DynArray();
+                var cur_arg: DynArray = (DynArray)NULL;
+                var arg_id = 0;
+                var macro_tokens = macro_data.tokens;
+
+                if(this.match(TokenType.OPEN_PAREN)) {
+                    var opens = 1;
+
+                    if(!this.check(TokenType.CLOSE_PAREN)) {
+                        while(1) {
+                            cur_arg = new DynArray;
+
+                            while((!this.check(TokenType.COMMA)) && this.available() and opens > 0) {
+                                var tok = this.advance();
+                                if(tok.type == TokenType.OPEN_PAREN) opens = opens + 1;
+                                if(tok.type == TokenType.CLOSE_PAREN) opens = opens - 1;
+                                if(opens == 0) break;
+                                
+                                if(tok.type == TokenType.IDENTIFIER) {
+                                    cur_arg.extend(this.expand_token(tok));
+                                } else {
+                                    cur_arg.append((u64)tok);
+                                }
+                            }
+
+                            args.append((u64)cur_arg);
+                            arg_id = arg_id + 1;
+
+                            if(arg_id >= macro_tokens.length()) {
+                                this.error((TokenLocation)token.location, "Too many arguments passed to macro");
+                            }
+
+                            if(!this.match(TokenType.COMMA)) break;
+                        }
+                    }
+
+                    if(opens > 0) {
+                        this.error((TokenLocation)token.location, "Unclosed macro arguments");
+                    }
+                }
+
+                var final_tokens = new DynArray;
+
+                var it = macro_tokens.iterator();
+                while(it.next()) {
+                    var macro_token: Token = (Token)it.value;
+                    
+                    if(macro_token.type == TokenType.IDENTIFIER && macro_data.args.contains_str(macro_token.value)) {
+                        var idx = macro_data.args.indexof_str(macro_token.value);
+                        final_tokens.extend((DynArray)args.at(idx));
+                    } else {
+                        final_tokens.append(it.value);
+                    }
+                }
+
+                return final_tokens;
+
+            } else {
+                return macro_data.tokens;
+            }
+        }
+        var arr = new DynArray;
+        arr.append((u64)token);
+        return arr;
+    }
+
+    proc peek -> Token {
+        return this.tokens.at(this.pos);
+    }
+
+    proc available -> u8 {
+        return this.peek().type != TokenType.EOF;
+    }
+
+    proc advance -> Token {
+        var token = this.peek();
+        this.pos = this.pos + 1;
+        return token;
+    }
+
+    proc check(ttype: TokenType) -> u8 {
+        return this.peek().type == ttype;
+    }
+
+    proc match(ttype: TokenType) -> u8 {
+        if(this.check(ttype)) {
+            this.pos = this.pos + 1;
+            return true;
+        }
+
+        return false;
+    }
+
+    proc consume(ttype: TokenType, format: u8*, ...) -> Token {
+        var peek = this.peek();
+        if(peek.type == ttype) return this.advance();
+
+        va_start(3);
+        this.error_va((TokenLocation)peek.location, format, __valist);
+        return 0;
+    }
+
+    proc error(location: TokenLocation, format: u8*, ...) {
+        va_start(3); // 2 parameters, 1 invisible parameter (this ptr)
+
+        fprintf(stderr, "%s:%d:%d: [ERROR] ", location.file, location.row, location.col);
+        
+        // calculate passed
+        var passed: u32 = 0;
+        var i = 0;
+
+        while(i < strlen(format)) {
+            var chr: u8 = format[i];
+
+            if(chr == '%') {
+                i = i + 1;
+                var nextchr: u8 = format[i];
+
+                if(nextchr == 0) break;
+
+                if(nextchr != '%') {
+                    passed = passed + 1;
+                }
+            }
+
+            i = i + 1;
+        }
+
+        if(passed < 1) {
+            push 0;
+            push 0;
+        } else {
+            if(passed == 1) {
+                push 0;
+            }
+            va_push(i, passed);
+        }
+
+        push format;
+        push stderr;
+        call fprintf 4;
+        drop;
+
+        fprintf(stderr, "\n");
+        exit(1);
+    }
+
+
+    proc error_va(location: TokenLocation, format: u8*, __valist: VaArgs) {
+        fprintf(stderr, "%s:%d:%d: [ERROR] ", location.file, location.row, location.col);
+        
+        // calculate passed
+        var passed: u32 = 0;
+        var i = 0;
+
+        while(i < strlen(format)) {
+            var chr: u8 = format[i];
+
+            if(chr == '%') {
+                i = i + 1;
+                var nextchr: u8 = format[i];
+
+                if(nextchr == 0) break;
+
+                if(nextchr != '%') {
+                    passed = passed + 1;
+                }
+            }
+
+            i = i + 1;
+        }
+
+        if(passed < 1) {
+            push 0;
+            push 0;
+        } else {
+            if(passed == 1) {
+                push 0;
+            }
+            va_push(i, passed);
+        }
+
+        push format;
+        push stderr;
+        call fprintf 4;
+        drop;
+
+        fprintf(stderr, "\n");
+        exit(1);
+    }
+}

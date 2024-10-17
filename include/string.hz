@@ -1,0 +1,144 @@
+%include "cstdlib.hz"
+%include "cstring.hz"
+%include "cstdio.hz"
+%include "vargs.hz"
+
+class String;
+
+class String {
+    var str: u8*;
+    var size: u64;
+    var initialized: u8;
+
+    String(str: u8*) {
+        if(str == NULL) {
+            this.size = 0;
+            this.str = malloc(20);
+        } else {
+            this.str = malloc(strlen(str) + 1);
+            this.str[strlen(str)] = 0;
+            memcpy(this.str, str, strlen(str));
+        }
+    }
+
+    proc length -> u64 {
+        return this.size;
+    }
+
+    proc buffer -> u8* {
+        return this.str;
+    }
+
+    proc set_buffer(str: u8*) {
+        var len = strlen(str);
+        this.resize(len);
+        memcpy(this.str, str, len);
+    }
+
+    proc concat_array(other_str: u8*) {
+        var other_len = strlen(other_str);
+
+        this.str = realloc(this.str, other_len + this.size + 1);
+        memcpy((ptr)this.str + this.size, other_str, other_len);
+        this.size = this.size + other_len;
+        this.str[this.size] = 0;
+    }
+
+    proc concat(other_str: String) {
+        var other_len = other_str.length();
+
+        this.str = realloc(this.str, other_len + this.size + 1);
+        memcpy((ptr)this.str + this.size, other_str.buffer(), other_len);
+        this.size = this.size + other_len;
+        this.str[this.size] = 0;
+    }
+
+    proc format(format: u8*, ...) {
+        va_start(2); // 1 parameter, 1 invisible parameter (this ptr)
+        
+        // calculate passed
+        var passed: u32 = 0;
+        var i = 0;
+
+        while(i < strlen(format)) {
+            var chr: u8 = format[i];
+
+            if(chr == '%') {
+                i = i + 1;
+                var nextchr: u8 = format[i];
+
+                if(nextchr == 0) break;
+
+                if(nextchr != '%') {
+                    passed = passed + 1;
+                }
+            }
+
+            i = i + 1;
+        }
+
+
+        var saved_args: u64* = malloc(passed * sizeof(u64));
+        var required_size: i32;
+
+        i = 0;
+        while(i < passed) {
+            saved_args[i] = va_next(u64);
+            i = i + 1;
+        }
+
+        if(passed < 1) {
+            push 0;
+        } else {
+            va_push(i, passed);
+        }
+
+        push format;
+        push 0;
+        push NULL;
+        call snprintf 4;
+        pop required_size;
+
+        this.resize(required_size);
+
+        if(passed < 1) {
+            push 0;
+        } else {
+            va_push(i, passed);
+        }
+
+        push format;
+        push required_size;
+        push this.str;
+        call snprintf 4;
+        drop;
+
+        free(saved_args);
+    }
+
+    proc resize(new_size: u64) {
+        this.str = realloc(this.str, new_size + 1);
+        this.size = new_size;
+        this.str[this.size] = 0;
+    }
+
+    proc substring(start: u32, end: u32) -> String {
+        var new_str = new String(NULL);
+        var sub_array = (u8*)malloc(end - start + 1);
+
+        memcpy(sub_array, (ptr)((u64)this.str) + start, end - start);
+        sub_array[end-start] = 0;
+
+        new_str.str = sub_array;
+        return new_str;
+    }
+
+    proc substring_array(start: u32, end: u32) -> u8* {
+        var sub_array = (u8*)malloc(end - start + 1);
+
+        memcpy(sub_array, (ptr)((u64)this.str) + start, end - start);
+        sub_array[end-start] = 0;
+
+        return sub_array;
+    }
+}

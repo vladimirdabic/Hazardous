@@ -1,0 +1,721 @@
+%include "token.hz"
+%include "dynarray.hz"
+%include "hashmap.hz"
+
+
+%define NodeBase [
+    var node_type: NodeType
+]
+
+%define set_base(node_id) [
+    this.node_type = NodeType.node_id
+]
+
+
+enum TypeEnum {
+    U8, U16, U32, U64,
+    I8, I16, I32, I64,
+    PTR, STRUCT, SUB_STRUCT, CLASS,
+    ENUM, ARRAY,
+    NONE
+}
+
+enum NodeType {
+    PROGRAM_VARIABLE, PROGRAM_PROCEDURE, PROGRAM_EXTERN_PROCEDURE, PROGRAM_EXTERN_VARIABLE,
+    LOCAL_VARIABLE, LOCAL_STRUCT, LOCAL_ARRAY, VARIABLE, ASSIGN_VARIABLE, NUMBER, STRING,
+    BINARY_OPERATION, CALL_FUNCTION, CALL_FUNCTION_EXPR, CAST, EXPR_STATEMENT, RETURN, DEREF_PTR, SET_AT_PTR,
+    RES_UNINITIALIZED, RES_INITIALIZED, ADDR_OF, PROGRAM_STRUCT, PROGRAM_CLASS, ACCESS_STRUCT_MEMBER,
+    WRITE_STRUCT_MEMBER, SIZEOF, SIZEOFTYPE, NEGATE, IF_STMT, WHILE_STMT, COMPOUND_STMT, BREAK, NEW_INSTANCE, REGISTER,
+    ASSIGN_REGISTER, MULTIPLE, SWITCH_STATEMENT, ENUMERATION, PUSH, POP, CALL, INLINE_ASM
+}
+
+
+
+class Type;
+class Type {
+    var id: TypeEnum;
+    var is_base: u8;
+    var base: Type;
+
+    Type(id: TypeEnum, is_base: u8, base: Type) {
+        this.id = id;
+        this.is_base = is_base;
+        this.base = base;
+    }
+}
+
+class StructType {
+    var id: TypeEnum;
+    var is_base: u8;
+    var base: Type;
+    var fields: DynArray;
+    var name: u8*;
+    var declared: u8;
+
+    StructType(fields: DynArray, name: u8*, declared: u8) {
+        this.id = TypeEnum.SUB_STRUCT;
+        this.is_base = true;
+        this.fields = fields;
+        this.name = name;
+        this.declared = declared;
+    }
+}
+
+class ArrayType {
+    var id: TypeEnum;
+    var is_base: u8;
+    var base: Type;
+    var size: u64;
+    var element_type: Type;
+
+    ArrayType(size: u64, element_type: Type) {
+        this.id = TypeEnum.ARRAY;
+        this.is_base = true;
+        this.size = size;
+        this.element_type = element_type;
+    }
+}
+
+class ClassMethod {
+    var arguments: DynArray;
+    var varargs: u8;
+    var return_type: Type;
+
+    ClassMethod(arguments: DynArray, varargs: u8, return_type: Type) {
+        this.arguments = arguments;
+        this.varargs = varargs;
+        this.return_type = return_type;
+    }
+}
+
+
+class SwitchEntry {
+    var nconstant: u64;
+    var body: DynArray;
+
+    SwitchEntry(nconstant: u64, body: DynArray) {
+        this.body = body;
+        this.nconstant = nconstant;
+    }
+}
+
+
+// Simple node
+struct Node {
+    node_type: NodeType;
+}
+
+
+class ProgramVariable {
+    NodeBase;
+    var name: u8*;
+    var type: Type;
+    var is_local: u8;
+    var location: TokenLocation;
+
+    ProgramVariable(name: u8*, type: Type, is_local: u8, location: TokenLocation) {
+        set_base(PROGRAM_VARIABLE);
+        this.name = name;
+        this.type = type;
+        this.is_local = is_local;
+        this.location = location;
+    }
+}
+
+
+class ProgramProcedure {
+    NodeBase;
+    var name: u8*;
+    var return_type: Type;
+    var body: DynArray;
+    var args: DynArray;
+    var location: TokenLocation;
+    var fwd_declared: u8;
+    var varargs: u8;
+    var is_local: u8;
+    var is_stdcall: u8;
+    var always: u8;
+
+    ProgramProcedure(name: u8*, return_type: Type, body: DynArray, args: DynArray, location: TokenLocation, fwd_declared: u8, varargs: u8, is_local: u8, is_stdcall: u8, always: u8) {
+        set_base(PROGRAM_PROCEDURE);
+        this.name = name;
+        this.return_type = return_type;
+        this.body = body;
+        this.args = args;
+        this.location = location;
+        this.fwd_declared = fwd_declared;
+        this.varargs = varargs;
+        this.is_local = is_local;
+        this.is_stdcall = is_stdcall;
+        this.always = always;
+    }
+}
+
+
+class ProgramExternProcedure {
+    NodeBase;
+    var name: u8*;
+    var return_type: Type;
+    var args: DynArray;
+    var varargs: u8;
+    var is_stdcall: u8;
+    var location: TokenLocation;
+
+    ProgramExternProcedure(name: u8*, return_type: Type, args: DynArray, location: TokenLocation, varargs: u8, is_stdcall: u8) {
+        set_base(PROGRAM_EXTERN_PROCEDURE);
+        this.name = name;
+        this.return_type = return_type;
+        this.args = args;
+        this.location = location;
+        this.varargs = varargs;
+        this.is_stdcall = is_stdcall;
+    }
+}
+
+
+class ProgramExternVariable {
+    NodeBase;
+    var name: u8*;
+    var type: Type;
+    var location: TokenLocation;
+
+    ProgramExternVariable(name: u8*, type: Type, location: TokenLocation) {
+        set_base(PROGRAM_EXTERN_VARIABLE);
+        this.name = name;
+        this.type = type;
+        this.location = location;
+    }
+}
+
+
+class LocalVariable {
+    NodeBase;
+    var name: u8*;
+    var type: Type;
+    var value: Node;
+    var location: TokenLocation;
+
+    LocalVariable(name: u8*, type: Type, value: Node, location: TokenLocation) {
+        set_base(LOCAL_VARIABLE);
+        this.name = name;
+        this.type = type;
+        this.value = value;
+        this.location = location;
+    }
+}
+
+
+class LocalStruct {
+    NodeBase;
+    var name: u8*;
+    var type: Type;
+    var location: TokenLocation;
+
+    LocalStruct(name: u8*, type: Type, location: TokenLocation) {
+        set_base(LOCAL_STRUCT);
+        this.name = name;
+        this.type = type;
+        this.location = location;
+    }
+}
+
+
+class LocalArray {
+    NodeBase;
+    var name: u8*;
+    var type: Type;
+    var size: u32;
+    var location: TokenLocation;
+
+    LocalArray(name: u8*, type: Type, size: u32, location: TokenLocation) {
+        set_base(LOCAL_ARRAY);
+        this.name = name;
+        this.type = type;
+        this.size = size;
+        this.location = location;
+    }
+}
+
+
+class Variable {
+    NodeBase;
+    var name: u8*;
+    var location: TokenLocation;
+
+    Variable(name: u8*, location: TokenLocation) {
+        set_base(VARIABLE);
+        this.name = name;
+        this.location = location;
+    }
+}
+
+
+class AssignVariable {
+    NodeBase;
+    var name: u8*;
+    var value: Node;
+    var location: TokenLocation;
+    
+    AssignVariable(name: u8*, value: Node, location: TokenLocation) {
+        set_base(ASSIGN_VARIABLE);
+        this.name = name;
+        this.value = value;
+        this.location = location;
+    }
+}
+
+
+class Number {
+    NodeBase;
+    var value: u64;
+
+    Number(value: u64) {
+        set_base(NUMBER);
+        this.value = value;
+    }
+}
+
+
+class HzString {
+    NodeBase;
+    var value: u8*;
+    var location: TokenLocation;
+
+    HzString(value: u8*, location: TokenLocation) {
+        set_base(STRING);
+        this.value = value;
+        this.location = location;
+    }
+}
+
+
+class BinaryOperation {
+    NodeBase;
+    var left: Node;
+    var right: Node;
+    var operation: TokenType;
+
+    BinaryOperation(left: Node, right: Node, operation: TokenType) {
+        set_base(BINARY_OPERATION);
+        this.left = left;
+        this.right = right;
+        this.operation = operation;
+    }
+}
+
+
+class CallFunction {
+    NodeBase;
+    var name: u8*;
+    var args: DynArray;
+    var location: TokenLocation;
+
+    CallFunction(name: u8, args: DynArray, location: TokenLocation) {
+        set_base(CALL_FUNCTION);
+        this.name = name;
+        this.args = args;
+        this.location = location;
+    }
+}
+
+
+class CallFunctionExpression {
+    NodeBase;
+    var value: Node;
+    var args: DynArray;
+    var location: TokenLocation;
+
+    CallFunctionExpression(value: Node, args: DynArray, location: TokenLocation) {
+        set_base(CALL_FUNCTION_EXPR);
+        this.value = value;
+        this.args = args;
+        this.location = location;
+    }
+}
+
+
+class Cast {
+    NodeBase;
+    var value: Node;
+    var type: Type;
+
+    Cast(value: Node, type: Type) {
+        set_base(CAST);
+        this.value = value;
+        this.type = type;
+    }
+}
+
+
+class ExprStmt {
+    NodeBase;
+    var value: Node;
+
+    ExprStmt(value: Node) {
+        set_base(EXPR_STATEMENT);
+        this.value = value;
+    }
+}
+
+
+class Return {
+    NodeBase;
+    var value: Node;
+    var location: TokenLocation;
+
+    Return(value: Node, location: TokenLocation) {
+        set_base(RETURN);
+        this.value = value;
+        this.location = location;
+    }
+}
+
+
+class DereferencePointer {
+    NodeBase;
+    var pointer: Node;
+    var offset: Node;
+    var location: TokenLocation;
+
+    DereferencePointer(pointer: Node, offset: Node, location: TokenLocation) {
+        set_base(DEREF_PTR);
+        this.pointer = pointer;
+        this.offset = offset;
+        this.location = location;
+    }
+}
+
+
+class SetAtPointer {
+    NodeBase;
+    var pointer: Node;
+    var offset: Node;
+    var value: Node;
+    var location: TokenLocation;
+
+    SetAtPointer(pointer: Node, offset: Node, value: Node, location: TokenLocation) {
+        set_base(SET_AT_PTR);
+        this.pointer = pointer;
+        this.offset = offset;
+        this.value = value;
+        this.location = location;
+    }
+}
+
+
+class ReserveUninitialized {
+    NodeBase;
+    var type: Type;
+    var size: u64;
+    var location: TokenLocation;
+
+    ReserveUninitialized(type: Type, size: u64, location: TokenLocation) {
+        set_base(RES_UNINITIALIZED);
+        this.type = type;
+        this.size = size;
+        this.location = location;
+    }
+}
+
+
+class ReserveInitialized {
+    NodeBase;
+    var type: Type;
+    var data: DynArray;
+    var location: TokenLocation;
+
+    ReserveInitialized(type: Type, data: DynArray, location: TokenLocation) {
+        set_base(RES_INITIALIZED);
+        this.type = type;
+        this.data = data;
+        this.location = location;
+    }
+}
+
+
+class AddressOf {
+    NodeBase;
+    var name: u8*;
+    var location: TokenLocation;
+
+    AddressOf(name: u8*, location: TokenLocation) {
+        set_base(ADDR_OF);
+        this.name = name;
+        this.location = location;
+    }
+}
+
+
+class ProgramStruct {
+    NodeBase;
+    var name: u8*;
+    var fields: DynArray;
+    var location: TokenLocation;
+
+    ProgramStruct(name: u8*, fields: DynArray, location: TokenLocation) {
+        set_base(PROGRAM_STRUCT);
+        this.name = name;
+        this.fields = fields;
+        this.location = location;
+    }
+}
+
+
+class ProgramClass {
+    NodeBase;
+    var name: u8*;
+    var fields: DynArray;
+    var methods: DynArray;
+    var initializer: ClassMethod;
+    var location: TokenLocation;
+
+    ProgramClass(name: u8*, fields: DynArray, methods: DynArray, initializer: ClassMethod, location: TokenLocation) {
+        set_base(PROGRAM_CLASS);
+        this.name = name;
+        this.fields = fields;
+        this.location = location;
+    }
+}
+
+
+class AccessStructMember {
+    NodeBase;
+    var struct_pointer: Node;
+    var name: u8*;
+    var location: TokenLocation;
+
+    AccessStructMember(struct_pointer: Node, name: u8*, location: TokenLocation) {
+        set_base(ACCESS_STRUCT_MEMBER);
+        this.struct_pointer = struct_pointer;
+        this.name = name;
+        this.location = location;
+    }
+}
+
+
+class WriteStructMember {
+    NodeBase;
+    var struct_pointer: Node;
+    var name: u8*;
+    var value: Node;
+    var location: TokenLocation;
+
+    WriteStructMember(struct_pointer: Node, name: u8*, value: Node, location: TokenLocation) {
+        set_base(WRITE_STRUCT_MEMBER);
+        this.struct_pointer = struct_pointer;
+        this.name = name;
+        this.value = value;
+        this.location = location;
+    }
+}
+
+
+class Sizeof {
+    NodeBase;
+    var value: Node;
+
+    Sizeof(value: Node) {
+        set_base(SIZEOF);
+        this.value = value;
+    }
+}
+
+
+class SizeofType {
+    NodeBase;
+    var type: Type;
+
+    SizeofType(type: Type) {
+        set_base(SIZEOFTYPE);
+        this.type = type;
+    }
+}
+
+
+class Negate {
+    NodeBase;
+    var value: Node;
+
+    Negate(value: Node) {
+        set_base(NEGATE);
+        this.value = value;
+    }
+}
+
+
+class IfStatement {
+    NodeBase;
+    var value: Node;
+    var body: Node;
+    var else_body: Node;
+
+    IfStatement(value: Node, body: Node, else_body: Node) {
+        set_base(IF_STMT);
+        this.value = value;
+        this.body = body;
+        this.else_body = else_body;
+    }
+}
+
+
+class WhileStatement {
+    NodeBase;
+    var value: Node;
+    var body: Node;
+
+    WhileStatement(value: Node, body: Node) {
+        set_base(WHILE_STMT);
+        this.value = value;
+        this.body = body;
+    }
+}
+
+
+class CompoundStatement {
+    NodeBase;
+    var body: Node;
+
+    CompoundStatement(body: Node) {
+        set_base(COMPOUND_STMT);
+        this.body = body;
+    }
+}
+
+
+class Break {
+    NodeBase;
+    var location: TokenLocation;
+
+    Break(location: TokenLocation) {
+        set_base(BREAK);
+        this.location = location;
+    }
+}
+
+
+class NewInstance {
+    NodeBase;
+    var name: u8*;
+    var args: DynArray;
+    var location: TokenLocation;
+
+    NewInstance(name: u8*, args: DynArray, location: TokenLocation) {
+        set_base(NEW_INSTANCE);
+        this.name = name;
+        this.args = args;
+        this.location = location;
+    }
+}
+
+
+class Register {
+    NodeBase;
+    var name: u8*;
+
+    Register(name: u8*) {
+        set_base(REGISTER);
+        this.name = name;
+    }
+}
+
+
+class AssignRegister {
+    NodeBase;
+    var name: u8*;
+    var value: Node;
+
+    AssignRegister(name: u8*, value: Node) {
+        set_base(ASSIGN_REGISTER);
+        this.name = name;
+        this.value = value;
+    }
+}
+
+
+class Multiple {
+    NodeBase;
+    var nodes: DynArray;
+
+    Multiple(nodes: DynArray) {
+        set_base(MULTIPLE);
+        this.nodes = nodes;
+    }
+}
+
+
+class SwitchStatement {
+    NodeBase;
+    var value: Node;
+    var cases: DynArray;
+    var default_case: DynArray;
+
+    SwitchStatement(value: Node, cases: DynArray, default_case: DynArray) {
+        set_base(SWITCH_STATEMENT);
+        this.value = value;
+        this.cases = cases;
+        this.default_case = default_case;
+    }
+}
+
+
+class Enumeration {
+    NodeBase;
+    var name: u8*;
+    var values: HashMap;
+
+    Enumeration(name: u8*, values: HashMap) {
+        set_base(ENUMERATION);
+        this.name = name;
+        this.values = values;
+    }
+}
+
+
+class Push {
+    NodeBase;
+    var value: Node;
+
+    Push(value: Node) {
+        set_base(PUSH);
+        this.value = value;
+    }
+}
+
+
+class Pop {
+    NodeBase;
+    var name: u8*;
+    var location: TokenLocation;
+
+    Pop(name: u8*, location: TokenLocation) {
+        set_base(POP);
+        this.name = name;
+        this.location = location;
+    }
+}
+
+
+class Call {
+    NodeBase;
+    var name: u8*;
+    var location: TokenLocation;
+    var args_passed: u64;
+
+    Call(name: u8*, args_passed: u64, location: TokenLocation) {
+        set_base(CALL);
+        this.name = name;
+        this.args_passed = args_passed;
+        this.location = location;
+    }
+}
+
+
+class InlineAssembly {
+    NodeBase;
+    var value: u8*;
+
+    InlineAssembly(value: u8*) {
+        set_base(INLINE_ASM);
+        this.value = value;
+    }
+}

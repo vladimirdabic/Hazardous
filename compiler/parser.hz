@@ -1,0 +1,294 @@
+%include "nodes.hz"
+%include "hashmap.hz"
+%include "dynarray.hz"
+%include "token.hz"
+%include "cstdlib.hz"
+%include "cstdio.hz"
+%include "utils.hz"
+
+
+struct HzTypeNamePair {
+    type: Type;
+    name: u8*;
+}
+
+
+class HzParser {
+    var typedefs: HashMap;
+    var tokens: DynArray;
+    var pos: u64;
+
+    HzParser() {
+        this.typedefs = new HashMap;
+    }
+
+    proc parse(tokens: DynArray) -> DynArray {
+        this.tokens = tokens;
+        this.typedefs.clear();
+        this.pos = 0;
+
+        var declarations = new DynArray;
+        var node: Node = (Node)0;
+
+        while(this.available()) {
+            node = this.parse_declaration();
+            if(node) {
+                declarations.append((u64)node);
+            }
+        }
+
+        return declarations;
+    }
+
+
+    proc parse_declaration -> Node {
+        var is_local = this.match(TokenType.LOCAL);
+
+        if(this.match(TokenType.VAR)) {
+            var var_name = this.consume(TokenType.IDENTIFIER, "Expected variable name");
+            this.consume(TokenType.COLON, "Expected ':'");
+            var var_type = this.consume_type("Expected variable type");
+
+            this.consume(TokenType.SEMICOLON, "Expected ';' after global variable declaration");
+
+            return new ProgramVariable(var_name.value, var_type, is_local, (TokenLocation)var_name.location);
+        }
+
+        if(this.match(TokenType.PROC)) {
+            var is_stdcall = this.match(TokenType.STDCALL);
+            var name = this.consume(TokenType.IDENTIFIER, "Expected procedure name");
+            var args = new DynArray;
+            var varargs = false;
+
+            if(this.match(TokenType.OPEN_PAREN)) {
+                if(!this.check(TokenType.CLOSE_PAREN)) {
+                    var arg_name: Token = (Token)0;
+                    var arg_type: Type = (Type)0;
+                    var type_pair: HzTypeNamePair = (HzTypeNamePair)0;
+                    while(1) {
+                        if(this.match(TokenType.VARARGS)) {
+                            varargs = true;
+                            break;
+                        }
+
+                        arg_name = this.consume(TokenType.IDENTIFIER, "Expected procedure parameter name");
+                        this.consume(TokenType.COLON, "Expected procedure parameter type");
+                        arg_type = this.consume_type("Expected procedure parameter type");
+                        type_pair = (HzTypeNamePair)malloc(sizeof(HzTypeNamePair));
+                        type_pair.type = arg_type;
+                        type_pair.name = arg_name.value;
+                        args.append((u64)type_pair);
+
+                        if(!this.match(TokenType.COMMA)) break;
+                    }
+                }
+
+                this.consume(TokenType.CLOSE_PAREN, "Expected ')' after procedure parameter definition");
+
+                var return_type: Type = (Type)0;
+
+                if(this.match(TokenType.POINTER_ARROW))
+                    return_type = this.consume_type("Expected procedure return type after '->'");
+                else
+                    return_type = new Type(TypeEnum.NONE, true, (Type)NULL);
+
+
+                if(this.match(TokenType.SEMICOLON))
+                    return (Node)new ProgramProcedure(name.value, return_type, (DynArray)NULL, args, (TokenLocation)name.location, true, varargs, is_local, is_stdcall, false);
+
+                this.consume(TokenType.OPEN_BRACE, "Expected '{' for procedure body");
+                var body = this.parse_block();
+
+                return (Node)new ProgramProcedure(name.value, return_type, body, args, (TokenLocation)name.location, false, varargs, is_local, is_stdcall, false);
+            }
+        }
+
+        if(this.match(TokenType.STRUCT)) {
+            var name = this.consume(TokenType.IDENTIFIER, "Expected struct name");
+
+            if(this.match(TokenType.SEMICOLON)) {
+                this.typedefs.set(name.value, (u64)new StructType((DynArray)NULL, name.value, false));
+                return (Node)NULL;
+            }
+
+            var body = this.parse_struct_body();
+
+            this.typedefs.set(name.value, (u64)new StructType(body, name.value, true));
+            return new ProgramStruct(name.value, body, (TokenLocation)name.location);
+        }
+
+        this.error(this.peek(), "Expected declaration");
+        return (Node)NULL;
+    }
+
+    proc parse_statement -> Node {
+        return (Node)NULL;
+    }
+
+    proc parse_struct_body -> DynArray {
+        this.consume(TokenType.OPEN_BRACE, "Expected '{'");
+        var body = new DynArray;
+
+        while(!this.check(TokenType.CLOSE_BRACE)) {
+            var field_name = this.consume(TokenType.IDENTIFIER, "Expected field name");
+            this.consume(TokenType.COLON, "Expected ':'");
+            var field_type = this.consume_type("Expected field type");
+
+            if(this.match(TokenType.OPEN_SQUARE)) {
+                var arr_size = this.consume(TokenType.NUMBER, "Expected array size").number;
+                this.consume(TokenType.CLOSE_SQUARE, "Expected ']' after array size");
+                field_type = (Type)new ArrayType(arr_size, field_type);
+            }
+
+            this.consume(TokenType.SEMICOLON, "Expected ';' after field");
+
+            var pair = (HzTypeNamePair)malloc(sizeof(HzTypeNamePair));
+            pair.type = field_type;
+            pair.name = field_name.value;
+            body.append((u64)pair);
+        }
+
+        this.consume(TokenType.CLOSE_BRACE, "Expected '}'");
+        return body;
+    }
+
+    proc parse_block -> DynArray {
+        var statements = new DynArray;
+
+        while(!this.check(TokenType.CLOSE_BRACE))
+            statements.append((u64)this.parse_statement());
+
+        this.consume(TokenType.CLOSE_BRACE, "Expected '}' after block");
+        return statements;
+    }
+
+    // Helper functions
+    proc peek -> Token {
+        return (Token)this.tokens.at(this.pos);
+    }
+
+    proc advance -> Token {
+        var token = this.peek();
+        this.pos = this.pos + 1;
+        return token;
+    }
+
+    proc available -> u8 {
+        return this.peek().type != TokenType.EOF;
+    }
+
+    proc check(expected_type: TokenType) -> u8 {
+        return this.peek().type == expected_type;
+    }
+
+    proc consume(expected_type: TokenType, error_fmt: u8*, ...) -> Token {
+        va_start(3); // 2 + 1 parameter, 1 = invisible this pointer
+
+        if(this.check(expected_type)) return this.advance();
+
+        var peek = this.peek();
+        var required_args = required_format_args(error_fmt);
+        var i: i64;
+
+        fprintf(stderr, "%s:%d:%d: [ERROR] ", peek.location.file, peek.location.row, peek.location.col);
+        
+        va_push_min(i, required_args, 2);
+
+        push error_fmt;
+        push stderr;
+        call fprintf 4;
+
+        fprintf(stderr, "\n");
+        exit(1);
+        return (Token)NULL;
+    }
+
+    proc match(expected_type: TokenType) -> u8 {
+        if(this.check(expected_type)) {
+            this.pos = this.pos + 1;
+            return true;
+        }
+
+        return false;
+    }
+
+    proc matchn(ntypes: u8, ...) -> u8 {
+        va_start(2);
+
+        while(ntypes > 0) {
+            if(this.check(va_next(TokenType))) {
+                this.pos = this.pos + 1;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    proc match_type -> Type {
+        var peek = this.peek();
+        
+        if(peek.type >= TokenType.U8 && peek.type <= TokenType.PTR) {
+            this.pos = this.pos + 1;
+            var type_id = peek.type - TokenType.U8;
+            var final_type = new Type(type_id, true, (Type)NULL);
+
+            while(this.match(TokenType.STAR))
+                final_type = new Type(TypeEnum.PTR, false, final_type);
+
+            return final_type;
+        }
+
+
+        if(this.match(TokenType.STRUCT)) {
+            var sub_struct_fields = this.parse_struct_body();
+            return new StructType(sub_struct_fields, "struct", true);
+        }
+
+        if(peek.type != TokenType.IDENTIFIER) return (Type)NULL;
+        var saved_type = (Type)this.typedefs.get(peek.value);
+        if(!saved_type) return (Type)NULL;
+
+        this.pos = this.pos + 1;
+
+        while(this.match(TokenType.STAR))
+            saved_type = new Type(TypeEnum.PTR, false, saved_type);
+
+        return saved_type;
+    }
+
+    proc consume_type(error_fmt: u8*, ...) -> Type {
+        va_start(2);
+        var matched_type = this.match_type();
+        if(matched_type) return matched_type;
+
+        this.error_va(this.peek(), error_fmt, __valist);
+        return (Type)NULL;
+    }
+
+    proc previous -> Token {
+        return (Token)this.tokens.at(this.pos - 1);
+    }
+
+    proc error(token: Token, error_fmt: u8*, ...) {
+        va_start(3); // 2 + 1 parameter, 1 = invisible this pointer
+        
+        this.error_va(token, error_fmt, __valist);
+    }
+
+    proc error_va(token: Token, error_fmt: u8*, __valist: VaArgs) {
+        var required_args = required_format_args(error_fmt);
+        var i: i64;
+
+        fprintf(stderr, "%s:%d:%d: [ERROR] ", token.location.file, token.location.row, token.location.col);
+        
+        va_push_min(i, required_args, 2);
+
+        push error_fmt;
+        push stderr;
+        call fprintf 4;
+
+        fprintf(stderr, "\n");
+        exit(1);
+    }
+}

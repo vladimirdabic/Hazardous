@@ -1,0 +1,25 @@
+
+external proc memchr(p: ptr, i: i32, l: i64) -> ptr;
+external proc memcmp(p: ptr, p2: ptr, l: i64) -> i32;
+external proc memcpy(p: ptr, p2: ptr, l: i64) -> ptr;
+external proc memmove(p: ptr, p2: ptr, l: i64) -> ptr;
+external proc memset(p: ptr, i: i32, l: i64) -> ptr;
+external proc strcat(s1: u8*, s2: u8*) -> u8*;
+external proc strchr(s: u8*, i: i32) -> u8*;
+external proc strcmp(s1: u8*, s2: u8*) -> i32;
+external proc strcoll(s1: u8*, s2: u8*) -> i32;
+external proc strcpy(s1: u8*, s2: u8*) -> u8*;
+external proc strcspn(s1: u8*, s2: u8*) -> i64;
+external proc strerror(i: i32) -> u8*;
+
+external proc strlen(str: u8*) -> i64;
+external proc strncat(s1: u8*, s2: u8*, l: i64) -> u8*;
+external proc strncmp(s1: u8*, s2: u8*, n: i64) -> i32;
+external proc strncpy(s1: u8*, s2: u8*, n: i64) -> u8*;
+external proc strpbrk(s1: u8*, s2: u8*) -> u8*;
+external proc strrchr(s1: u8*, i: i32) -> u8*;
+external proc strspn(s1: u8*, s2: u8*) -> i64;
+external proc strstr(s1: u8*, s2: u8*) -> u8*;
+external proc strtok(s1: u8*, s2: u8*) -> u8*;
+external proc strxfrm(s1: u8*, s2: u8*, n: i64) -> i64;
+external proc strdup(str1: u8*) -> u8*;

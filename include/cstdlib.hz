@@ -1,0 +1,96 @@
+// MSVCRT FUNCTIONS AND VARIABLES ONLY
+
+// RAND_MAX is the minimum value that may be returned by rand
+// The minimum iz zero
+%define RAND_MAX [32767]
+
+// These values may be used as exit status codes
+%define EXIT_SUCCESS [0]
+%define EXIT_FAILURE [1]
+
+
+// Definitions for path name functions
+
+// %ifndef MAX_PATH
+%define MAX_PATH [260]
+// %endif
+
+%define _MAX_PATH   [MAX_PATH]
+%define _MAX_DRIVE  [3]
+%define _MAX_DIR    [256]
+%define _MAX_FNAME  [256]
+%define _MAX_EXT    [256]
+
+
+external var _argc: i32;
+external var _argv: u8**;
+
+
+external proc __p___argc -> i32*;
+external proc __p___argv -> u8***;
+
+%define __argc [(*__p___argc())]
+%define __argv [(*__p___argv())]
+
+
+// %ifndef MB_CUR_MAX
+external var _imp____mbcur_max: i32*;
+%define MB_CUR_MAX [(*_imp____mbcur_max)]
+// %endif
+
+
+// external var errno: i32;
+external proc _errno -> i32*;
+%define errno [(*_errno())]
+
+
+external proc __p__environ -> u8***;
+%define _environ  [(*__p__environ())]
+%define environ [_environ]
+
+external var _imp___sys_nerr: i32*;
+%define sys_nerr [(*_imp___sys_nerr)]
+
+external var _imp__sys_errlist: u8***;
+%define sys_errlist [(*_imp__sys_errlist)]
+
+
+external proc __p__osver    -> u32*;
+external proc __p__winver   -> u32*;
+external proc __p__winmajor -> u32*;
+external proc __p__winminor -> u32*;
+%define _osver      [(*__p__osver())]
+%define _winver     [(*__p__winver())]
+%define _winmajor   [(*__p__winmajor())]
+%define _winminor   [(*__p__winminor())]
+
+external var __imp__pgmptr_dll: u8**;
+%define _pgmptr [(*_imp___pgmptr_dll)]
+
+external var _imp___fmode: i32*;
+%define	_fmode	[(*_imp___fmode)]
+
+
+
+// external proc double __cdecl	atof	(const char*);
+external proc atoi(s: u8*) -> i32;
+external proc atoll(s: u8*) -> i64;
+external proc strtol(a: u8*, b: u8**, c: i32) -> i64;
+external proc strtoul(a: u8*, b: u8**, c: i32) -> u32;
+external proc rand -> i32;
+external proc srand(v: u32);
+external proc calloc(size: i64, element_size: i64) -> ptr;
+external proc malloc(size: i64) -> ptr;
+external proc realloc(stream: ptr, new_size: i64) -> ptr;
+external proc free(pointer: ptr);
+external proc abort;
+external proc exit(n: i32);
+external proc system(cmd: u8*) -> i32;
+external proc getenv(s: u8*) -> u8*;
+external proc abs(n: i32) -> i32;
+external proc labs(n: i64) -> i64;
+external proc putenv(s: u8*) -> i32;
+external proc searchenv(a: u8*, b: u8*, c: u8*);
+external proc itoa(val: i32, str: u8*, c: i32) -> u8*;
+external proc ltoa(val: i64, str: u8*, c: i32) -> u8*;
+external proc atoll (str: u8*) -> i64;

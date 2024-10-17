@@ -1,0 +1,21 @@
+
+%define va_list [u8*]
+external proc __va_start(va_list*, ...);
+
+// __crt_va_start_a
+%define va_start(ap, x) [(__va_start(&ap, x))]
+
+// __crt_va_arg
+%define va_arg(ap, t) [
+        ((sizeof(t) > sizeof(i64) || (sizeof(t) & (sizeof(t) - 1)) != 0)
+            ? **(t**)((ap = ap + sizeof(i64)) - sizeof(i64))             
+            :  *(t* )((ap = ap + sizeof(i64)) - sizeof(i64)))]
+
+// __crt_va_end
+%define va_end(ap)        [(ap = (va_list)0)]
+
+
+//%define va_start [__crt_va_start]
+//%define va_arg   [__crt_va_arg]
+//%define va_end   [__crt_va_end]
+%define va_copy(destination, source) [((destination) = (source))]

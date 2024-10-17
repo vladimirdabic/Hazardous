@@ -1,0 +1,362 @@
+%include "dynarray.hz"
+%include "hashmap.hz"
+%include "vargs.hz"
+%include "cstdlib.hz"
+%include "cstring.hz"
+
+// Assembly generator for Hazardous
+
+local proc hzformat(fmt: u8*, ...) -> u8* {
+    va_start(1);
+    
+    var required_args: u64;
+
+    var fmts = fmt;
+    while((*fmts)) {
+        if((*fmts) == '%') {
+            fmts = (u8*)fmts + 1;
+            if((*fmts) != 0 && (*fmts) != '%')
+                required_args = required_args + 1;
+        }
+        fmts = (u8*)fmts + 1;
+    }
+
+
+    var i: u64;
+    var required_size: u64;
+    va_push_min(i, required_args, 3);
+
+    push fmt;
+    push 0;
+    push NULL;
+    call snprintf 4;
+    pop required_size;
+
+    var str: u8* = malloc(required_size + 1);
+
+    va_push_min(i, required_args, 2);
+
+    push fmt;
+    push str;
+    call sprintf 4;
+    drop;
+
+    return str;
+}
+
+
+enum HzTypes {
+    U8, U16, U32, U64,
+    I8, I16, I32, I64,
+    PTR, STRUCT, SUB_STRUCT, CLASS,
+    ENUM, ARRAY,
+    NONE
+}
+
+enum HzInstruction {
+    PUSH_LOCAL, PUSH_GLOBAL, PUSH_NUMBER, PUSH_STRING, CALL,
+    STORE, POP, RET,
+    ADD, SUB, MUL, DIV, MOD, GREATER, LOWER, GEQUALS, LEQUALS, EQUALS, NEQUALS,
+    JMP, JE, JNE
+}
+
+proc asm_type_name(id: HzTypes) -> u8* {
+    switch(id) {
+        case HzTypes.U8:
+        case HzTypes.I8:
+            return "byte";
+        case HzTypes.U16:
+        case HzTypes.I16:
+            return "word";
+        case HzTypes.U32:
+        case HzTypes.I32:
+            return "dword";
+        case HzTypes.U64:
+        case HzTypes.I64:
+        case HzTypes.CLASS:
+        case HzTypes.STRUCT:
+        case HzTypes.SUB_STRUCT:
+        case HzTypes.PTR:
+            return "qword";
+    }
+    return 0;
+}
+
+proc asm_type_letter(id: HzTypes) -> u8 {
+    switch(id) {
+        case HzTypes.U8:
+        case HzTypes.I8:
+            return 'b';
+        case HzTypes.U16:
+        case HzTypes.I16:
+            return 'w';
+        case HzTypes.U32:
+        case HzTypes.I32:
+            return 'd';
+        case HzTypes.U64:
+        case HzTypes.I64:
+        case HzTypes.CLASS:
+        case HzTypes.STRUCT:
+        case HzTypes.SUB_STRUCT:
+        case HzTypes.PTR:
+            return 'q';
+    }
+    return 0;
+}
+
+proc type_size(id: HzTypes) -> u8 {
+    switch(id) {
+        case HzTypes.U8:
+        case HzTypes.I8:
+            return 1;
+        case HzTypes.U16:
+        case HzTypes.I16:
+            return 2;
+        case HzTypes.U32:
+        case HzTypes.I32:
+            return 4;
+        case HzTypes.U64:
+        case HzTypes.I64:
+        case HzTypes.CLASS:
+        case HzTypes.STRUCT:
+        case HzTypes.SUB_STRUCT:
+        case HzTypes.PTR:
+            return 8;
+    }
+    return 0;
+}
+
+class HzType;
+class HzType {
+    var id: HzTypes;
+    var is_base: u8;
+    var base: HzType;
+
+    HzType(id: HzTypes, is_base: u8, base: HzType) {
+        this.id = id;
+        this.is_base = is_base;
+        this.base = base;
+    }
+
+    proc asm_name -> u8* {
+        return asm_type_name(this.id);
+    }
+
+    proc asm_letter -> u8 {
+        return asm_type_letter(this.id);
+    }
+
+    proc size -> u8 {
+        return type_size(this.id);
+    }
+}
+
+class HzTypeStruct {
+    var id: HzTypes;
+    var is_base: u8;
+    var base: HzType;
+    var fields: DynArray;
+
+    HzTypeStruct(fields: DynArray) {
+        this.id = HzTypes.SUB_STRUCT;
+        this.is_base = true;
+        this.fields = fields;
+    }
+}
+
+class HzTypeArray {
+    var id: HzTypes;
+    var is_base: u8;
+    var base: HzType;
+    var size: u64;
+    var element_type: HzType;
+
+    HzTypeArray(size: u64, element_type: HzType) {
+        this.id = HzTypes.ARRAY;
+        this.is_base = true;
+        this.size = size;
+        this.element_type = element_type;
+    }
+}
+
+
+class HzAsmModule;
+class HzAsmBlock;
+class HzAsmFunction;
+class HzAsmVariable;
+class HzFunctionSignature;
+class HzAsmLabel;
+
+class HzFunctionSignature {
+    var return_type: HzType;
+    var number_of_arguments: u64;
+    var argument_types: HzType*;
+    var has_vargs: u8;
+
+    HzFunctionSignature(return_type: HzType, has_vargs: u8, number_of_arguments: u64, ...) {
+        va_start(4);
+
+        this.return_type = return_type;
+        this.has_vargs = has_vargs;
+        this.number_of_arguments = number_of_arguments;
+        this.argument_types = (HzType*)malloc(sizeof(ptr) * number_of_arguments);
+
+        var i = 0;
+        while(number_of_arguments > 0) {
+            this.argument_types[i] = va_next(HzType);
+            i = i + 1;
+        }
+    }
+}
+
+class HzAsmBlock {
+    var module: HzAsmModule;
+    var instructions: DynArray;
+
+    HzAsmBlock(module: HzAsmModule) {
+        this.instructions = new DynArray;
+        this.module = module;
+    }
+
+    proc emit(instruction: HzInstruction, ...) {
+        va_start(2);
+
+        switch(instruction) {
+            case HzInstruction.PUSH_NUMBER:
+                this.instructions.append((u64)hzformat("mov rax, %d", va_next(u64)));
+                this.instructions.append((u64)"push rax");
+                break;
+
+            case HzInstruction.PUSH_STRING:
+                this.instructions.append((u64)hzformat("mov rax, %s", this.module.add_string(va_next(u8*))));
+                this.instructions.append((u64)"push rax");
+                break;
+        }
+    }
+}
+
+class HzAsmFunction {
+    var name: u8*;
+    var signature: HzFunctionSignature;
+    var body: HzAsmBlock;
+    var variables: HashMap;
+    var label_id: u32;
+    var max_align: u32;
+    var local_offset: u32;
+
+    HzAsmFunction(name: u8*, signature: HzFunctionSignature) {
+        this.name = name;
+        this.signature = signature;
+        this.label_id = 0;
+        this.max_align = 1;
+        this.local_offset = 0;
+        this.variables = new HashMap;
+    }
+
+    proc declare_variable(name: u8*, type: HzType) -> HzAsmVariable {
+        var variable = new HzAsmVariable(name, type);
+        variable.defined_in = this;
+        variable.offset = this.local_offset;
+        this.variables.set(name, (u64)variable);
+        return variable;
+    }
+}
+
+class HzAsmLabel {
+    var id: u32;
+    var owner: HzAsmFunction;
+    var label: u8*;
+
+    HzAsmLabel(owner: HzAsmFunction) {
+        this.owner = owner;
+        this.id = owner.label_id;
+        this.label = hzformat(".L%u", this.id);
+        owner.label_id = owner.label_id + 1;
+    }
+
+    proc emit(block: HzAsmBlock) {
+        block.instructions.append((u64)hzformat("%s:", this.label));
+    }
+}
+
+class HzAsmVariable {
+    var name: u8*;
+    var type: HzType;
+    var offset: u64;
+    var defined_in: HzAsmFunction;
+
+    HzAsmVariable(name: u8*, type: HzType) {
+        this.name = name;
+        this.type = type;
+        this.defined_in = (HzAsmFunction)NULL;
+        this.offset = 0;
+    }
+}
+
+struct DataSegmentEntry {
+    type: HzTypes;
+    data: u8*;
+}
+
+class HzAsmModule {
+    var functions: DynArray;
+    var variables: HashMap;
+    var data_id: u64;
+    var data_segment: HashMap;
+
+    HzAsmModule() {
+        this.functions = new DynArray;
+        this.variables = new HashMap;
+        this.data_segment = new HashMap;
+        this.data_id = 0;
+    }
+
+    proc add_function(func: HzAsmFunction) {
+        this.functions.append((u64)func);
+    }
+
+    proc declare_variable(name: u8*, type: HzType) -> HzAsmVariable {
+        var variable = new HzAsmVariable(name, type);
+        this.variables.set(name, (u64)variable);
+        return variable;
+    }
+
+    proc add_string(str: u8*) -> u8* {
+        var data_name = hzformat("__str.i%d", this.data_id);
+        this.data_id = this.data_id + 1;
+
+        var len = strlen(str);
+        var data = (u8*)malloc(len + 1);
+
+        var i = 0;
+        while(i < len) {
+            var chr = str[i];
+            if(chr == '\') {
+                var next = str[i + 1];
+                if(next == 0) break;
+
+                switch(next) {
+                    case '0': chr = 0; break;
+                    case '1': chr = 1; break;
+                    case 'n': chr = '\n'; break;
+                    case 'r': chr = '\r'; break;
+                    case 't': chr = '\t'; break;
+                    case 34: chr = 34; break; // double quote "
+                    default: chr = next; 
+                }
+
+            }
+            data[i] = chr;
+            i = i + 1;
+        }
+
+        data[i+1] = 0;
+
+        var entry = (DataSegmentEntry)malloc(sizeof(DataSegmentEntry));
+        entry.type = HzTypes.U8;
+        entry.data = data;
+        this.data_segment.set(data_name, (u64)entry);
+
+        return data_name;
+    }
+}

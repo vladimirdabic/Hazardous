@@ -1,0 +1,49 @@
+
+external proc __acrt_iob_func(_Ix: u32) -> ptr;
+
+%define stdin  [__acrt_iob_func(0)]
+%define stdout [__acrt_iob_func(1)]
+%define stderr [__acrt_iob_func(2)]
+%define NULL [(ptr)0]
+
+%define SEEK_CUR     [1]
+%define SEEK_END     [2]
+%define SEEK_SET     [3]
+%define FILENAME_MAX [260]
+%define FOPEN_MAX    [20]
+
+external proc fprintf(stream: ptr, format: u8*, ...) -> i32;
+external proc printf(format: u8*, ...) -> i32;
+external proc sprintf(buffer: u8*, format: u8*, ...) -> i32;
+external proc snprintf(s: u8, n: u64, format: u8*, ...) -> i32;
+external proc vfprintf(stream: ptr, format: u8*, ...) -> i32;
+external proc fscanf(stream: ptr, format: u8*, ...) -> i32;
+external proc scanf(format: u8*, ...) -> i32;
+external proc sscanf(str: u8*, format: u8*, ...) -> i32;
+external proc fgetc(stream: ptr) -> i32;
+external proc fgets(str: u8*, n: i32, stream: ptr) -> u8*;
+external proc fputc(char: i32, stream: ptr) -> i32;
+external proc fputs(str: u8*, stream: ptr) -> i32;
+external proc getc(stream: ptr) -> i32;
+external proc getchar -> i32;
+external proc gets(str: u8*) -> u8*;
+external proc putc(char: i32, stream: ptr) -> i32;
+external proc putchar(char: i32) -> i32;
+external proc puts(str: u8*) -> i32;
+external proc ungetc(char: i32, stream: ptr) -> i32;
+external proc fclose(stream: ptr) -> i32;
+external proc ferror(stream: ptr) -> i32;
+external proc fflush(stream: ptr) -> i32;
+external proc fopen(file_name: u8*, mode: u8*) -> ptr;
+external proc fread(pointer: ptr, size: u64, nmemb: u64, stream: ptr) -> u64;
+external proc freopen(file_name: u8*, mode: u8*, stream: ptr) -> ptr;
+external proc fseek(stream: ptr, offset: u64, whence: i32) -> i32;
+external proc ftell(stream: ptr) -> u64;
+external proc fwrite(stream: ptr, size: u64, nmemb: u64, stream: ptr) -> u64;
+external proc remove(file_name: u8*) -> i32;
+external proc rename(old_file_name: u8*, new_file_name: u8*) -> i32;
+external proc rewind(stream: ptr);
+external proc setbuf(stream: ptr, buffer: u8*);
+external proc setvbuf(stream: ptr, buffer: u8*, mode: i32, size: u64) -> i32;
+external proc tmpfile -> ptr;
+external proc tmpnam(str: u8*) -> u8*;

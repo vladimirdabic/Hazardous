@@ -1,0 +1,18 @@
+
+local proc required_format_args(fmt: u8*) -> u64 {
+    var required = 0;
+
+    while(*fmt) {
+        if((*fmt) == '%') {
+            fmt = (u8*)fmt + 1;
+
+            if((*fmt) != '%' && (*fmt) != 0) {
+                required = required + 1;
+            }
+        }
+
+        fmt = (u8*)fmt + 1;
+    }
+
+    return required;
+}

@@ -1,0 +1,13 @@
+external proc isalnum(char: i32) -> u8;
+external proc isalpha(char: i32) -> u8;
+external proc isdigit(char: i32) -> u8;
+external proc isupper(char: i32) -> u8;
+external proc islower(char: i32) -> u8;
+external proc isspace(char: i32) -> u8;
+external proc isxdigit(char: i32) -> u8;
+external proc toupper(char: i32) -> u8;
+external proc tolower(char: i32) -> u8;
+external proc ispunct(char: i32) -> u8;
+external proc isprint(char: i32) -> u8;
+external proc isgraph(char: i32) -> u8;
+external proc iscntrl(char: i32) -> u8;

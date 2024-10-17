@@ -1,0 +1,161 @@
+%include "cstdlib.hz"
+%include "cstring.hz"
+
+%define INITIAL_CAPACITY [5]
+
+class DynArrayIterator;
+class DynArray;
+
+class DynArray {
+    var data: u64*;
+    var capacity: u32;
+    var length: u32;
+
+    DynArray() {
+        this.capacity = INITIAL_CAPACITY;
+        this.data = malloc(INITIAL_CAPACITY * sizeof(u64));
+        this.length = 0;
+    }
+
+    proc append(value: u64) {
+        if(this.length == this.capacity) {
+            this.capacity = this.capacity * 2;
+            this.data = realloc(this.data, this.capacity * sizeof(u64));
+        }
+
+        this.data[this.length] = value;
+        this.length = this.length + 1;
+    }
+
+    proc extend(other: DynArray) {
+        var it = other.iterator();
+
+        while(it.next()) {
+            this.append(it.value);
+        }
+    }
+
+    proc contains(value: u64) -> u8 {
+        var it = this.iterator();
+
+        while(it.next()) {
+            if(it.value == value) return true;
+        }
+
+        return false;
+    }
+
+    proc contains_str(str: u8*) -> u8 {
+        var it = this.iterator();
+
+        while(it.next()) {
+            if(strcmp((ptr)it.value, str) == 0) return true;
+        }
+
+        return false;
+    }
+
+    proc indexof(value: u64) -> u32 {
+        var it = this.iterator();
+
+        while(it.next()) {
+            if(it.value == value) return it.index;
+        }
+
+        return 0;
+    }
+
+    proc indexof_str(str: u8*) -> u32 {
+        var it = this.iterator();
+
+        while(it.next()) {
+            if(strcmp((ptr)it.value, str) == 0) return it.index;
+        }
+
+        return 0;
+    }
+
+    proc appends(value: u8*) {
+        this.append((u64)value);
+    }
+
+    proc removes -> u8* {
+        return (u8*)this.remove();
+    }
+
+    proc remove -> u64 {
+        if(this.length == 0) {
+            return 0;
+        }
+
+        this.length = this.length - 1;
+        return this.data[this.length + 1];
+    }
+
+    proc clear {
+        this.length = 0;
+    }
+
+    proc peek -> u64 {
+        return this.data[this.length - 1];
+    }
+
+    proc at(idx: i32) -> u64 {
+        return this.data[idx];
+    }
+
+    proc ats(idx: i32) -> u8* {
+        return (u8*)this.data[idx];
+    }
+
+    proc length -> u32 {
+        return this.length;
+    }
+
+    proc iterator -> DynArrayIterator {
+        return new DynArrayIterator(this, false);
+    }
+    
+    proc reverse_iterator -> DynArrayIterator {
+        return new DynArrayIterator(this, true);
+    }
+}
+
+class DynArrayIterator {
+    var value: u64;
+    var index: u32;
+
+    var lindex: u32;
+    var array: DynArray;
+    var reversed: u8;
+
+    DynArrayIterator(array: DynArray, reversed: u8) {
+        this.array = array;
+        if(reversed) {
+            this.lindex = array.length();
+        } else {
+            this.lindex = 0;
+        }
+
+        this.reversed = reversed;
+    }
+
+    proc next -> u8 {
+        if((!this.reversed) && this.lindex < this.array.length()) {
+            var i: u32 = this.lindex;
+            this.lindex = this.lindex + 1;
+            this.index = i;
+            this.value = this.array.at(i);
+            return true;
+        } else if(this.reversed && this.lindex > 0) {
+            this.lindex = this.lindex - 1;
+            var i: u32 = this.lindex;
+            this.index = i;
+            this.value = this.array.at(i);
+            return true;
+        }
+
+        free((ptr)this);
+        return false;
+    }
+}
